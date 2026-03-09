@@ -1,0 +1,306 @@
+name: CI Workflow
+
+on:
+  workflow_dispatch:
+
+
+      
+jobs:
+  Cache:
+    name: Cache Dependencies
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache.outputs.cache-key }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Cache Node Modules
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            node_modules
+            yarn.lock
+            .yarn
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Output Cache Key
+        id: cache-key
+        run: echo "CACHE_KEY=${{ steps.cache.outputs.cache-key }}" >> $GITHUB_ENV
+
+
+
+  Test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: Cache
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Restore Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            node_modules
+            yarn.lock
+            .yarn
+          key: ${{ needs.Cache.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Install Dependencies
+        run: yarn install
+
+      - name: Install Angular CLI
+        run: yarn global add @angular/cli
+
+      - name: Generate Karma Config (if missing)
+        run: |
+          if [ ! -f frontend/karma.conf.js ]; then
+            cd frontend && ng generate config karma
+          fi
+
+      - name: Run Tests
+        run: |
+          cd frontend
+          # Update Karma config to run Chrome in headless mode
+          if grep -q 'browsers:' karma.conf.js; then
+            sed -i 's/browsers: .*/browsers: ["ChromeHeadless"],/' karma.conf.js
+          else
+            echo 'browsers: ["ChromeHeadless"],' >> karma.conf.js
+          fi
+          # Run tests
+          ng test --watch=false --source-map=true
+          cd ..
+          npm run test:server
+
+     
+
+  # https://github.com/gitleaks  
+  GitLeaks:
+    name: Run GitLeaks
+    runs-on: ubuntu-latest
+    needs: Cache
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Run Gitleaks Scan
+      run: |
+        docker run --rm -v ${{ github.workspace }}:/repo -w /repo zricethezav/gitleaks:latest detect --verbose --source . -f json -r gitleaks.json
+      continue-on-error: true
+
+    - name: Upload Gitleaks Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Gitleaks-report
+        path: gitleaks.json
+
+
+        
+  # https://github.com/marketplace/actions/nodejsscan
+  Nodejsscan:
+    name: Run Nodejsscan
+    runs-on: ubuntu-latest
+    needs: Cache
+    steps:
+    - name: Checkout the code
+      uses: actions/checkout@v3
+
+    - name: Run Nodejsscan Scan
+      id: njsscan
+      uses: ajinabraham/njsscan-action@master
+      with:
+        args: '. --sarif --output nodejsscan.sarif'
+      continue-on-error: true
+
+    - name: Upload SARIF report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Nodejsscan-report
+        path: nodejsscan.sarif
+  
+        
+
+  # https://semgrep.dev/docs/semgrep-ci/sample-ci-configs#github-actions
+  Semgrep:
+    name: Run Semgrep
+    runs-on: ubuntu-latest
+    needs: Cache
+    container: 
+      image: semgrep/semgrep:latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Run Semgrep Scan
+        run: semgrep scan --config auto --json-output semgrep.json
+        continue-on-error: true
+
+      - name: Upload Semgrep Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Semgrep-report
+          path: semgrep.json
+
+
+
+  Retirejsscan:
+    name: Run Retirejsscan
+    runs-on: ubuntu-latest
+    needs: Cache
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
+
+      - name: Restore Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            node_modules
+            yarn.lock
+            .yarn
+          key: ${{ needs.Cache.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Install Retire.js and Dependencies
+        run: |
+          yarn install
+          npm install -g retire
+
+      - name: Run Retire.js Scan
+        run: |
+          retire --path . --outputformat json --outputpath retirejsscan.json || true
+        continue-on-error: true
+
+      - name: Upload Retire.js Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Retirejsscan-report
+          path: retirejsscan.json    
+
+
+
+  # https://github.com/aquasecurity/trivy-action
+  Trivy:
+    name: Build and Push with Trivy
+    runs-on: ubuntu-latest
+    needs: [GitLeaks, Nodejsscan, Semgrep, Retirejsscan]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up environment variables
+        id: set_env
+        run: |
+          IMAGE_TAG=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Build an image from Dockerfile
+        run: |
+          docker build -t docker.io/${{ secrets.DOCKERHUB_USERNAME }}/owasp-juiceapp:${{ github.sha }} .
+           
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/owasp-juiceapp:${{ github.sha }}'
+          format: 'json'
+          output: 'trivy.json'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Push Docker image to DockerHub
+        run: |
+          docker push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/owasp-juiceapp:${{ github.sha }}
+      
+      - name: Upload Trivy Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trivy-report
+          path: trivy.json
+
+
+          
+  UploadReports:
+    name: Upload Reports
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [Trivy]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Download GitLeaks Report
+        uses: actions/download-artifact@v3
+        with:
+          name: Gitleaks-report
+
+      - name: Download Nodejsscan Report
+        uses: actions/download-artifact@v3
+        with:
+          name: Nodejsscan-report
+
+      - name: Download Semgrep Report
+        uses: actions/download-artifact@v3
+        with:
+          name: Semgrep-report
+
+      - name: Download Retirejsscan Report
+        uses: actions/download-artifact@v3
+        with:
+          name: Retirejsscan-report
+          
+      - name: Download Trivy Report
+        uses: actions/download-artifact@v3
+        with:
+          name: Trivy-report
+      
+      - name: Set Up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+
+      - name: Install Requests Library
+        run: pip3 install requests
+
+      - name: Run Upload Script
+        run: |
+          python3 upload-reports.py gitleaks.json
+          python3 upload-reports.py nodejsscan.sarif
+          python3 upload-reports.py semgrep.json
+          python3 upload-reports.py retirejsscan.json
+          python3 upload-reports.py trivy.json
+
+          
