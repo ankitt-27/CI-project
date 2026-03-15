@@ -263,27 +263,27 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Download GitLeaks Report
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Gitleaks-report
 
       - name: Download Nodejsscan Report
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Nodejsscan-report
 
       - name: Download Semgrep Report
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Semgrep-report
 
       - name: Download Retirejsscan Report
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Retirejsscan-report
           
       - name: Download Trivy Report
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Trivy-report
       
