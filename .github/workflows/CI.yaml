@@ -162,46 +162,46 @@ jobs:
 
 
 
-  # Retirejsscan:
-  #   name: Run Retirejsscan
-  #   runs-on: ubuntu-latest
-  #   needs: Cache
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v3
+  Retirejsscan:
+    name: Run Retirejsscan
+    runs-on: ubuntu-latest
+    needs: Cache
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-  #     - name: Set Up Node.js
-  #       uses: actions/setup-node@v3
-  #       with:
-  #         node-version: 22
+      - name: Set Up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
 
-  #     - name: Restore Cache
-  #       uses: actions/cache@v3
-  #       with:
-  #         path: |
-  #           node_modules
-  #           yarn.lock
-  #           .yarn
-  #         key: ${{ needs.Cache.outputs.cache-key }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-yarn-
+      - name: Restore Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            node_modules
+            yarn.lock
+            .yarn
+          key: ${{ needs.Cache.outputs.cache-key }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
 
-  #     - name: Install Retire.js and Dependencies
-  #       run: |
-  #         yarn install
-  #         npm install -g retire
+      - name: Install Retire.js and Dependencies
+        run: |
+          yarn install
+          npm install -g retire
 
-  #     - name: Run Retire.js Scan
-  #       run: |
-  #         retire --path . --outputformat json --outputpath retirejsscan.json || true
-  #       continue-on-error: true
+      - name: Run Retire.js Scan
+        run: |
+          retire --path . --outputformat json --outputpath retirejsscan.json || true
+        continue-on-error: true
 
-  #     - name: Upload Retire.js Report
-  #       if: always()
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: Retirejsscan-report
-  #         path: retirejsscan.json    
+      - name: Upload Retire.js Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Retirejsscan-report
+          path: retirejsscan.json    
 
 
 
@@ -209,7 +209,7 @@ jobs:
   Trivy:
     name: Build and Push with Trivy
     runs-on: ubuntu-latest
-    needs: [GitLeaks, Nodejsscan, Semgrep]
+    needs: [GitLeaks, Nodejsscan, Semgrep, Retirejsscan]
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
