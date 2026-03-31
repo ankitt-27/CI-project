@@ -1,10 +1,10 @@
 name: CI Workflow
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
-
-      
 jobs:
   Cache:
     name: Cache Dependencies
