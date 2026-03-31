@@ -225,10 +225,11 @@ jobs:
           docker build -t docker.io/${{ secrets.DOCKERHUB_USERNAME }}/owasp-juiceapp:${{ github.sha }} .
            
 
-      - name: Run Trivy (table output)
+      - name: Run Trivy (source code scan - table output)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/owasp-juiceapp:${{ github.sha }}'
+          scan-type: 'fs'
+          scan-ref: '.'
           format: 'table'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
